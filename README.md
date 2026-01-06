@@ -11,6 +11,28 @@ A beautiful, modern web interface for automating email sending with Gmail API.
 - 🔒 **Secure** - Uses Gmail API with OAuth2 authentication
 - 📈 **Progress Tracking** - Visual progress bar during sending
 - 💾 **Auto-save Progress** - Resume sending from where you left off
+- 🛡️ **Anti-Blocking Protection** - Smart delays and rate limiting to prevent account blocking
+
+## 🚨 CRITICAL: Gmail Automation Safety
+
+**⚠️ READ THIS FIRST - YOUR ACCOUNT DEPENDS ON IT**
+
+This tool is configured with **ultra-conservative settings** to prevent Gmail from blocking you:
+- ⏱️ **3-5 minute delays** between emails (NOT seconds!)
+- 📧 **20 emails/day maximum** (NOT 450!)
+- 📅 **Tuesday, Wednesday, Thursday ONLY**
+- ⏰ **Specific time windows**:
+  - 9:30 AM - 10:30 AM
+  - 12:30 PM - 2:00 PM
+  - 5:30 PM - 7:00 PM
+- 🚫 **NO PDF attachments** (spam trigger)
+- 📝 **Plain text only** (no HTML)
+
+**DO NOT change these settings unless you want to get blocked.**
+
+📚 **MUST READ:** 
+- `GMAIL_SAFETY_CRITICAL.md` - Critical safety rules
+- `CUSTOM_SCHEDULE_GUIDE.md` - Your custom schedule details
 
 ## 🚀 Quick Start
 
@@ -64,12 +86,53 @@ Navigate to: `http://localhost:5000`
 - Click "Start Sending"
 - First time: Browser will open for Google authentication
 
-## 🎯 Gmail Sending Limits
+## 🛡️ Anti-Blocking Protection (Gmail-Safe)
 
-- **Personal Gmail**: 500 emails/day
-- **Google Workspace**: 2000 emails/day
+### Built-in Safety Features:
+- ⏱️ **Random Delays**: 3-5 MINUTES between each email (human-like behavior)
+- 🎲 **Content Rotation**: Automatically rotates 5 different subject/body templates
+- 📦 **Batch Processing**: Sends 5 emails, then takes a 15-minute break
+- ⏰ **Rate Limiting**: Max 5 emails/hour, 20 emails/day
+- 🔄 **Smart Retries**: Exponential backoff on temporary errors
+- 🚨 **Quota Detection**: Auto-stops if Gmail rate limits are hit
+- 💾 **Progress Saving**: Resume safely from where you stopped
+- 📅 **Custom Schedule**: Monday-Friday only
+- ⏰ **Time Windows**: 9:30-10:30 AM, 12:30-2 PM, 5:30-7 PM
 
-The script automatically tracks progress and can be run multiple days to send all emails.
+### Gmail Sending Limits:
+- **Personal Gmail**: 500 emails/day (we use 20 for SAFETY)
+- **This is NOT a bug** - Ultra-conservative = Account safety
+
+### Expected Sending Times (REALISTIC):
+- **5 emails**: ~20-25 minutes
+- **10 emails**: ~45-50 minutes
+- **20 emails**: ~1.5-2 hours (across 3 time windows)
+- **60 emails/week**: 3 days × 20 emails
+- **1500 emails**: ~25 weeks (~6 months)
+
+**Note:** YES, it's SLOW. That's intentional. Slow = Safe = No blocking.
+
+### 📅 Your Custom Schedule:
+- **Days**: Tuesday, Wednesday, Thursday ONLY
+- **Time Windows**:
+  - Morning: 9:30 AM - 10:30 AM
+  - Afternoon: 12:30 PM - 2:00 PM
+  - Evening: 5:30 PM - 7:00 PM
+- **Weekly Capacity**: 60 emails (3 days × 20)
+- **Monthly Capacity**: ~240 emails
+
+### 🚨 Why This Schedule?
+This pattern is **EXCELLENT** for Gmail because:
+- ✅ Irregular weekly pattern (3 days, not 5)
+- ✅ Multiple short time windows (not continuous)
+- ✅ Natural human behavior times
+- ✅ Very hard to detect as automation
+
+### 📚 Critical Reading:
+- **`CUSTOM_SCHEDULE_GUIDE.md`** - Complete schedule details
+- **`GMAIL_SAFETY_CRITICAL.md`** - MUST READ before sending
+- `QUICK_START_ANTI_BLOCKING.md` - Quick reference
+- `ANTI_BLOCKING_GUIDE.md` - Detailed guide
 
 ## 🌐 Hosting Options
 
@@ -103,9 +166,34 @@ git push heroku main
 
 ## 🔧 Configuration
 
-Edit `send_emails.py` to customize:
-- `MAX_EMAILS_PER_DAY` - Daily sending limit
-- `SLEEP_BETWEEN_EMAILS` - Delay between sends (seconds)
+### ⚠️ Current Gmail-Safe Settings:
+```python
+MIN_DELAY_SECONDS = 180         # 3 minutes (DO NOT REDUCE!)
+MAX_DELAY_SECONDS = 300         # 5 minutes
+BATCH_SIZE = 5                  # Small batches
+BATCH_BREAK_MINUTES = 15        # Long breaks
+MAX_EMAILS_PER_HOUR = 5         # Very conservative
+MAX_EMAILS_PER_DAY = 20         # Ultra-safe
+
+# Custom Schedule
+ALLOWED_WEEKDAYS = [1, 2, 3]    # Tuesday, Wednesday, Thursday
+TIME_WINDOWS = [
+    (9, 30, 10, 30),            # 9:30 AM - 10:30 AM
+    (12, 30, 14, 0),            # 12:30 PM - 2:00 PM
+    (17, 30, 19, 0),            # 5:30 PM - 7:00 PM
+]
+```
+
+### 🚨 WARNING:
+**DO NOT change these settings!** They are optimized for Gmail safety.
+
+If you change:
+- `MIN_DELAY_SECONDS` to less than 180 → **Account blocked**
+- `MAX_EMAILS_PER_DAY` to more than 20 → **Spam flagged**
+- `ALLOWED_WEEKDAYS` to include more days → **Bot detected**
+- `TIME_WINDOWS` to be continuous → **Automation detected**
+
+**See `CUSTOM_SCHEDULE_GUIDE.md` and `GMAIL_SAFETY_CRITICAL.md` for details.**
 
 ## 📊 File Structure
 
