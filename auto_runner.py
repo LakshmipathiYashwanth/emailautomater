@@ -15,7 +15,7 @@ print("=" * 60)
 print("🤖 AUTO-PILOT ACTIVATED: Email Automation")
 print("=" * 60)
 print("✓ This script will run seamlessly in the background.")
-print("✓ It checks the schedule every day at 10:00 AM.")
+print("✓ It checks the schedule HOURLY to catch all sending windows.")
 print("✓ Keep this terminal OPEN (minimized is fine).")
 print("=" * 60)
 
@@ -47,7 +47,8 @@ def job():
         logging.error(err_msg)
 
 # Schedule the job to run every day at 10:01 AM (Just inside the 9:30-10:30 window)
-schedule.every().day.at("10:01").do(job)
+# Check every hour (so if we miss a window, we catch the next one)
+schedule.every().hour.at(":01").do(job)
 
 # Also run once immediately on startup if it's within a window? 
 # Better to be safe and just wait for the schedule, or ask the user.

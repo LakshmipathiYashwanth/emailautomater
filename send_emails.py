@@ -1,4 +1,9 @@
 import os
+import ssl
+import certifi
+
+# Fix for SSL: CERTIFICATE_VERIFY_FAILED
+os.environ['SSL_CERT_FILE'] = certifi.where()
 import time
 import base64
 import pandas as pd
@@ -13,6 +18,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+import requests
+import urllib3
+
+# Suppress insecure request warnings if we need to disable SSL
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Configuration ---
 SCOPES = [
@@ -20,7 +30,6 @@ SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly'
 ]
 EMAILS_FILE = 'emails.csv'
-CREDENTIALS_FILE = 'credentials.json'
 CREDENTIALS_FILE = 'credentials.json'
 TOKEN_FILE = 'token.json'
 SENDER_NAME = "Yashwanth L"  # Name to appear in the "From" field
@@ -44,6 +53,7 @@ ALLOWED_NEW_EMAIL_DAYS = [1, 2, 3]
 
 # Follow-ups: Monday(0), Friday(4)
 ALLOWED_FOLLOWUP_DAYS = [0, 4]
+ALLOWED_WEEKDAYS = ALLOWED_NEW_EMAIL_DAYS + ALLOWED_FOLLOWUP_DAYS
 
 # Time windows stay the same (Morning/Afternoon/Evening)
 TIME_WINDOWS = [
@@ -158,7 +168,12 @@ def main():
         for index, row in pending_emails.iterrows():
             # (Loop logic for new emails - mostly same as before)
             if total_sent >= MAX_EMAILS_PER_DAY:
-                print(f"\n⏸ Daily limit of {MAX_EMAILS_PER_DAY} reached.")
+                total_all_time = len(df[df['status'] == 'sent'])
+                print(f"\n" + "=" * 60)
+                print(f"✅ DAILY TARGET ACHIEVED: {MAX_EMAILS_PER_DAY} emails sent.")
+                print(f"📈 TOTAL SENT (ALL TIME): {total_all_time}")
+                print(f"😴 Resting until tomorrow to ensure account safety.")
+                print("=" * 60)
                 break
             
             if hourly_count >= MAX_EMAILS_PER_HOUR:
@@ -190,7 +205,12 @@ def main():
             if success:
                 df.at[index, 'status'] = 'sent'
                 df.at[index, 'date_sent'] = datetime.now().strftime('%Y-%m-%d')
-                df.to_csv(EMAILS_FILE, index=False)  # Save immediately
+                try:
+                    df.to_csv(EMAILS_FILE, index=False)  # Save immediately
+                except PermissionError:
+                    print(f"\n❌ CRITICAL ERROR: Could not save progress to {EMAILS_FILE}.")
+                    print("👉 PLEASE CLOSE THE CSV FILE IF IT IS OPEN IN EXCEL OR OTHER APPS!")
+                
                 total_sent += 1
                 hourly_count += 1
                 delay = random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)
@@ -207,7 +227,7 @@ def main():
     elif mode == "followup":
         # Run follow-up logic ONLY
         if FOLLOW_UP_ENABLED:
-            total_sent = send_follow_ups(service, df) 
+            total_sent = send_follow_ups(service, df, sender_email) 
             # Note: send_follow_ups needs to return count to update total_sent
             # I will need to update send_follow_ups to be standalone or handle the counting
         
@@ -355,7 +375,7 @@ def get_random_followup_template():
     template = random.choice(FOLLOW_UP_TEMPLATES)
     return template["subject"], template["body"]
 
-def send_follow_ups(service, df):
+def send_follow_ups(service, df, sender_email):
     """Check for emails that need a follow-up and send them."""
     print("\n" + "=" * 60)
     print("🔄 Checking for Follow-ups...")
@@ -422,7 +442,12 @@ def send_follow_ups(service, df):
                     if success:
                         df.at[index, 'follow_up_status'] = 'sent'
                         df.at[index, 'follow_up_date'] = today.strftime('%Y-%m-%d')
-                        df.to_csv(EMAILS_FILE, index=False)  # Save immediately
+                        try:
+                            df.to_csv(EMAILS_FILE, index=False)  # Save immediately
+                        except PermissionError:
+                            print(f"\n❌ CRITICAL ERROR: Could not save progress to {EMAILS_FILE}.")
+                            print("👉 PLEASE CLOSE THE CSV FILE IF IT IS OPEN IN EXCEL OR OTHER APPS!")
+
                         count += 1
                         
                         # Random delay
@@ -487,37 +512,55 @@ def get_next_allowed_time():
     return f"Next {next_allowed_day} at {TIME_WINDOWS[0][0]}:{TIME_WINDOWS[0][1]:02d}"
 
 def authenticate_gmail():
-    """Shows basic usage of the Gmail API.
-    Lists the user's Gmail labels.
-    """
+    """Shows basic usage of the Gmail API with SSL fix."""
     creds = None
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     
-    # If there are no (valid) credentials available, let the user log in.
+    # Try to use standard requests session (pip-system-certs will handle SSL if installed)
+    session = requests.Session()
+    
+    # If you still get SSL errors, change this to False (NOT RECOMMENDED for production)
+    # but often necessary in corporate environments with SSL inspection
+    VERIFY_SSL = True 
+    session.verify = VERIFY_SSL
+    
+    from google.auth.transport.requests import Request as GoogleRequest
+    custom_request = GoogleRequest(session=session)
+
+    if os.path.exists(TOKEN_FILE):
+        try:
+            creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+        except Exception as e:
+            print(f"Token error: {e}. Token might be corrupted, will re-authenticate.")
+            creds = None
+    
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(custom_request)
+            except Exception as e:
+                print(f"Refresh failed: {e}. Attempting full login...")
+                creds = None # Trigger full login if refresh fails
+        
+        if not creds:
             if not os.path.exists(CREDENTIALS_FILE):
                 raise FileNotFoundError(f"Missing {CREDENTIALS_FILE}. Please download it from Google Cloud Console.")
             
             flow = InstalledAppFlow.from_client_secrets_file(
                 CREDENTIALS_FILE, SCOPES)
+            # The flow also needs the custom request or SSL bypass
             creds = flow.run_local_server(port=0)
         
-        # Save the credentials for the next run
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
 
     try:
+        # Build service with custom authorized http to handle SSL if needed
+        # However, googleapiclient uses httplib2 which is harder to patch.
+        # Most SSL errors happen during the AUTH step (requests), so this usually suffices.
         service = build('gmail', 'v1', credentials=creds)
         return service
-    except HttpError as error:
-        print(f'An error occurred: {error}')
+    except Exception as error:
+        print(f'An error occurred during service build: {error}')
         return None
 
 def create_message(sender, to, subject, message_text, pdf_path=None):
@@ -601,6 +644,10 @@ def run_campaign():
     # Normalize headers to support "Name", "Email", "Status", "Follow Up Status"
     df.columns = [c.strip().lower().replace(' ', '_').replace('-', '_') for c in df.columns]
 
+    # Standardize 'status' values to lowercase (fix for 'Pending' vs 'pending')
+    if 'status' in df.columns:
+        df['status'] = df['status'].astype(str).str.lower().str.strip()
+
     if 'status' not in df.columns:
         df['status'] = 'pending'
     if 'date_sent' not in df.columns:
@@ -654,7 +701,29 @@ def run_campaign():
         
     stats["mode"] = mode
 
-    # 4. Check Time Window
+    # 4. Check Daily Limit FIRST (Before Time Window)
+    # Count how many sent today
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    emails_sent_today = 0
+    if 'date_sent' in df.columns:
+        emails_sent_today += len(df[df['date_sent'].astype(str) == today_str])
+        
+    if 'follow_up_date' in df.columns:
+        emails_sent_today += len(df[df['follow_up_date'].astype(str) == today_str])
+
+    if emails_sent_today >= MAX_EMAILS_PER_DAY:
+        # Calculate all-time total
+        total_all_time = len(df[df['status'] == 'sent'])
+        
+        print(f"\n" + "=" * 60)
+        print(f"✅ DAILY TARGET ACHIEVED: {emails_sent_today} / {MAX_EMAILS_PER_DAY} emails sent.")
+        print(f"📈 TOTAL SENT (ALL TIME): {total_all_time}")
+        print(f"😴 Resting until tomorrow to ensure account safety.")
+        print("=" * 60)
+        stats["message"] = "Daily limit reached."
+        return stats
+
+    # 5. Check Time Window
     in_window, window_time = is_in_allowed_time_window()
     if not in_window:
         print(f"\n⏸ Outside allowed time windows.")
@@ -663,8 +732,8 @@ def run_campaign():
         stats["message"] = msg
         return stats
 
-    # 5. Execute
-    total_sent = 0
+    # 6. Execute
+    total_sent = emails_sent_today
     total_failed = 0
     hour_start_time = datetime.now()
     hourly_count = 0
@@ -673,7 +742,12 @@ def run_campaign():
         print("\n📧 Starting NEW Email Loop...")
         for index, row in pending_emails.iterrows():
             if total_sent >= MAX_EMAILS_PER_DAY:
-                print(f"\n⏸ Daily limit of {MAX_EMAILS_PER_DAY} reached.")
+                total_all_time = len(df[df['status'] == 'sent'])
+                print(f"\n" + "=" * 60)
+                print(f"✅ DAILY TARGET ACHIEVED: {MAX_EMAILS_PER_DAY} emails sent.")
+                print(f"📈 TOTAL SENT (ALL TIME): {total_all_time}")
+                print(f"😴 Resting until tomorrow to ensure account safety.")
+                print("=" * 60)
                 stats["message"] = "Daily limit reached."
                 break
             
@@ -706,7 +780,12 @@ def run_campaign():
             if success:
                 df.at[index, 'status'] = 'sent'
                 df.at[index, 'date_sent'] = datetime.now().strftime('%Y-%m-%d')
-                df.to_csv(EMAILS_FILE, index=False)  # Save immediately
+                try:
+                    df.to_csv(EMAILS_FILE, index=False)  # Save immediately
+                except PermissionError:
+                    print(f"\n❌ CRITICAL ERROR: Could not save progress to {EMAILS_FILE}.")
+                    print("👉 PLEASE CLOSE THE CSV FILE IF IT IS OPEN IN EXCEL OR OTHER APPS!")
+                
                 total_sent += 1
                 hourly_count += 1
                 delay = random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)
@@ -724,7 +803,7 @@ def run_campaign():
 
     elif mode == "followup":
         if FOLLOW_UP_ENABLED:
-            follow_up_count = send_follow_ups(service, df) 
+            follow_up_count = send_follow_ups(service, df, sender_email) 
             stats["sent_followup"] = follow_up_count
         
         # Save

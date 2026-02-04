@@ -1,5 +1,9 @@
 from flask import Flask, render_template, request, jsonify, send_file
 import os
+import certifi
+
+# Fix for SSL: CERTIFICATE_VERIFY_FAILED
+os.environ['SSL_CERT_FILE'] = certifi.where()
 import pandas as pd
 import json
 import threading

@@ -5,3 +5,4 @@ pandas
 flask
 gunicorn
 schedule
+playwright
